@@ -1,0 +1,177 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r}
+# Download and import gene expression data
+url_counts <- "https://raw.githubusercontent.com/ghazkha/Assessment4/main/gene_expression.tsv"
+download.file(url_counts, destfile = "gene_expression.tsv", quiet = TRUE)
+```
+```{r}
+ge <- read.table("gene_expression.tsv", header=TRUE, sep="\t", stringsAsFactors=FALSE)
+row.names(ge) <- ge[,1]
+ge <- ge[,-1]
+```
+```{r}
+# Show first six genes
+head(ge, 6)
+```
+```{r}
+# Add mean expression column
+ge$mean_expr <- rowMeans(ge)
+head(ge, 6)
+```
+```{r}
+# Top 10 genes with highest mean
+head(ge[order(-ge$mean_expr), , drop=FALSE], 10)
+```
+```{r}
+# Number of genes with mean < 10
+sum(ge$mean_expr < 10)
+```
+```{r}
+# Histogram of mean values
+hist(ge$mean_expr, xlab="Mean expression", main="Distribution of gene expression means")
+```
+```{r}
+# Download and import growth data
+url_growth <- "https://raw.githubusercontent.com/ghazkha/Assessment4/main/growth_data.csv"
+download.file(url_growth, destfile = "growth_data.csv", quiet = TRUE)
+
+gd <- read.csv("growth_data.csv", stringsAsFactors=FALSE)
+
+# Column names
+names(gd)
+```
+```{r}
+# Mean & SD for start (2005) and end (2020)
+with(gd, tapply(Circumf_2005_cm, Site, function(x) c(mean=mean(x), sd=sd(x))))
+with(gd, tapply(Circumf_2020_cm, Site, function(x) c(mean=mean(x), sd=sd(x))))
+```
+```{r}
+# Boxplots
+boxplot(Circumf_2005_cm ~ Site, data=gd, ylab="Circumference (cm)", main="2005 Circumference by Site")
+boxplot(Circumf_2020_cm ~ Site, data=gd, ylab="Circumference (cm)", main="2020 Circumference by Site")
+```
+```{r}
+# Mean growth over last 10 years
+gd$growth_10y <- gd$Circumf_2020_cm - gd$Circumf_2010_cm
+with(gd, tapply(gd$growth_10y, Site, mean))
+```
+```{r}
+# t-test for growth differences
+t.test(growth_10y ~ Site, data=gd)
+```
+```{r}
+library(seqinr)
+library(R.utils)
+```
+```{r}
+library(R.utils)
+library(seqinr)
+
+url_genome<- "https://ftp.ensemblgenomes.ebi.ac.uk/pub/bacteria/release-62/fasta/bacteria_121_collection/streptococcus_thermophilus_cag_236_gca_000434755/dna/Streptococcus_thermophilus_cag_236_gca_000434755.MGS236_.dna.toplevel.fa.gz"
+download.file(url_genome, destfile="sth_genome.fa.gz", mode="wb", quiet=FALSE)
+gunzip("sth_genome.fa.gz", destname="sth_genome.fa", overwrite = TRUE)
+cds_sth <- read.fasta("sth_genome.fa", seqtype="DNA")
+
+# read the whole-genome DNA
+genome_seq <- seqinr::read.fasta("sth_genome.fa", seqtype = "DNA")
+length(genome_seq)
+names(genome_seq)
+```
+```{r}
+# E. coli MG1655 CDS
+url_ecoli <- "https://ftp.ensemblgenomes.ebi.ac.uk/pub/bacteria/release-62/fasta/bacteria_0_collection/escherichia_coli_str_k_12_substr_mg1655_gca_000005845/cds/Escherichia_coli_str_k_12_substr_mg1655_gca_000005845.ASM584v2.cds.all.fa.gz"
+download.file(url_ecoli, destfile="ecoli_cds.fa.gz", quiet=TRUE)
+gunzip("ecoli_cds.fa.gz", overwrite=TRUE)
+cds_ecoli <- read.fasta("ecoli_cds.fa", seqtype="DNA")
+```
+```{r}
+n_cds <- data.frame(
+  Organism  = c("E. coli K-12 MG1655", "S. thermophilus CAG:236"),
+  CDS_count = c(length(cds_ecoli), length(cds_sth))
+)
+knitr::kable(n_cds, caption = "Number of CDS")
+
+```
+```{r}
+# CDS lengths
+len_ecoli <- as.numeric(summary(cds_ecoli)[,1])
+len_sth   <- as.numeric(summary(cds_sth)[,1])
+
+total_bp <- data.frame(
+  Organism   = c("E. coli K-12 MG1655", "S. thermophilus CAG:236"),
+  Total_bp   = c(sum(len_ecoli), sum(len_sth)),
+  Mean_len   = c(mean(len_ecoli), mean(len_sth)),
+  Median_len = c(median(len_ecoli), median(len_sth))
+)
+knitr::kable(total_bp, caption = "Total coding DNA and CDS lengths")
+
+```
+```{r}
+# Boxplot of CDS lengths
+boxplot(list(`E. coli`=len_ecoli, `S. thermophilus`=len_sth),
+        ylab="CDS length (bp)", main="CDS Length Distributions")
+```
+```{r}
+# Flatten DNA sequences
+dna_ecoli <- unlist(cds_ecoli)
+dna_sth   <- unlist(cds_sth)
+
+# Base frequencies
+basefreq_ecoli <- count(dna_ecoli, 1)
+basefreq_sth   <- count(dna_sth,   1)
+
+barplot(as.numeric(basefreq_ecoli), names.arg=names(basefreq_ecoli),
+        main="E. coli Base Composition", ylab="Count")
+barplot(as.numeric(basefreq_sth), names.arg=names(basefreq_sth),
+        main="S. thermophilus Base Composition", ylab="Count")
+
+# Translate to proteins
+prot_ecoli <- lapply(cds_ecoli, translate)
+prot_sth   <- lapply(cds_sth,   translate)
+
+# Amino acid frequencies
+aa <- unique(prot_ecoli[[1]]); aa <- aa[aa != "*"]
+aafreq_ecoli <- count(unlist(prot_ecoli), wordsize=1, alphabet=aa)
+aafreq_sth   <- count(unlist(prot_sth),   wordsize=1, alphabet=aa)
+
+barplot(as.numeric(aafreq_ecoli), names.arg=names(aafreq_ecoli),
+        las=2, main="E. coli Amino Acid Composition")
+barplot(as.numeric(aafreq_sth), names.arg=names(aafreq_sth),
+        las=2, main="S. thermophilus Amino Acid Composition")
+```
+```{r}
+rscu_ecoli <- uco(unlist(cds_ecoli), index="rscu", as.data.frame=TRUE)
+rscu_sth   <- uco(unlist(cds_sth),   index="rscu", as.data.frame=TRUE)
+
+head(rscu_ecoli, 10)
+head(rscu_sth, 10)
+
+barplot(rscu_ecoli$freq, names.arg=rscu_ecoli$codon,
+        las=2, main="E. coli Codon Usage", cex.names=0.6, ylab="RSCU")
+barplot(rscu_sth$freq, names.arg=rscu_sth$codon,
+        las=2, main="S. thermophilus Codon Usage", cex.names=0.6, ylab="RSCU")
+
+```
+```{r}
+prots_ecoli <- unlist(lapply(cds_ecoli, translate))
+prots_sth   <- unlist(lapply(cds_sth,   translate))
+
+# K=3 example
+k3_sth <- count(prots_sth, wordsize=3)
+top_over_sth3  <- head(sort(k3_sth, decreasing=TRUE), 10)
+top_under_sth3 <- head(sort(k3_sth, decreasing=FALSE), 10)
+
+barplot(as.numeric(top_over_sth3), names.arg=names(top_over_sth3),
+        las=2, main="S. thermophilus Top Over-represented 3-mers")
+barplot(as.numeric(top_under_sth3), names.arg=names(top_under_sth3),
+        las=2, main="S. thermophilus Top Under-represented 3-mers")
+
+# Compare with E. coli for the same k-mers
+k3_ecoli <- count(prots_ecoli, wordsize=3)
+k3_ecoli[names(top_over_sth3)]
+k3_ecoli[names(top_under_sth3)]
+```
